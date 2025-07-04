@@ -1,59 +1,45 @@
-# app.py
-
-import streamlit as st
+# Import all the necessary libraries
 import pandas as pd
 import numpy as np
 import joblib
+import pickle
+import streamlit as st
 
-# Load model and columns
-model = joblib.load('pollution_model.pkl')
-columns = joblib.load('model_columns.pkl')
+# Load the model and structure
+model = joblib.load("pollution_model.pkl")
+model_cols = joblib.load("model_columns.pkl")
 
-# Pollutants and safety limits (from your PDF)
-safety_limits = {
-    'O2': (5, 'min'),        # Dissolved Oxygen > 5 mg/L
-    'NO3': (10, 'max'),
-    'NO2': (0.1, 'max'),
-    'SO4': (250, 'max'),
-    'PO4': (0.1, 'max'),
-    'CL': (250, 'max')
-}
+# Let's create an User interface
+st.title("Water Pollutants Predictor")
+st.write("Predict the water pollutants based on Year and Station ID")
 
-pollutants = list(safety_limits.keys())
+# User inputs
+year_input = st.number_input("Enter Year", min_value=2000, max_value=2100, value=2022)
+station_id = st.text_input("Enter Station ID", value='1')
 
-# Streamlit App
-st.title("💧 Water Pollution Prediction")
-st.markdown("Predicts future pollutant levels at water stations.")
+# To encode and then predict
+if st.button('Predict'):
+    if not station_id:
+        st.warning('Please enter the station ID')
+    else:
+        # Prepare the input
+        input_df = pd.DataFrame({'year': [year_input], 'id':[station_id]})
+        input_encoded = pd.get_dummies(input_df, columns=['id'])
 
-# Inputs
-station_id = st.selectbox("Select Station ID", [str(i) for i in range(1, 23)])
-year_input = st.number_input("Enter Year (future/present)", min_value=2022, max_value=2100, value=2025)
+        # Align with model cols
+        for col in model_cols:
+            if col not in input_encoded.columns:
+                input_encoded[col] = 0
+        input_encoded = input_encoded[model_cols]
 
-if st.button("Predict"):
-    # Prepare input
-    input_df = pd.DataFrame({'year': [year_input], 'id': [station_id]})
-    input_encoded = pd.get_dummies(input_df, columns=['id'])
-    
-    # Add missing dummy columns
-    missing_cols = set(columns) - set(input_encoded.columns)
-    for col in missing_cols:
-        input_encoded[col] = 0
-    input_encoded = input_encoded[columns]  # Align column order
+        # Predict
+        predicted_pollutants = model.predict(input_encoded)[0]
+        pollutants = ['O2', 'NO3', 'NO2', 'SO4', 'PO4', 'CL']
 
-    # Predict
-    predicted = model.predict(input_encoded)[0]
-
-    st.subheader(f"Predicted Pollutants for Station {station_id} in {year_input}")
-    for i, pollutant in enumerate(pollutants):
-        value = predicted[i]
-        limit, condition = safety_limits[pollutant]
-
-        # Determine status
-        if (condition == 'max' and value <= limit) or (condition == 'min' and value >= limit):
-            status = f"✅ Safe"
-            color = "green"
-        else:
-            status = f"❌ Unsafe"
+        st.subheader(f"Predicted pollutant levels for the station '{station_id}' in {year_input}:")
+        predicted_values = {}
+        for p, val in zip(pollutants, predicted_pollutants):
+            st.write(f'{p}:{val:.2f}')
             color = "red"
 
         st.markdown(f"**{pollutant}**: {value:.2f} mg/L — :{color}[{status}]")
